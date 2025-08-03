@@ -6,6 +6,20 @@
 
 ## 🔧 セットアップ手順（uv使用）
 
+### 0. uv のインストール（初回のみ）
+
+```bash
+curl -Ls https://astral.sh/uv/install.sh | sh
+```
+
+インストール後、`uv` コマンドが使えることを確認してください：
+
+```bash
+uv --version
+```
+
+---
+
 ### 1. リポジトリをクローン
 
 ```bash
@@ -13,14 +27,9 @@ git clone https://github.com/your/repo.git
 cd your/repo
 ```
 
-### 2. uv初期化 & 依存追加
+---
 
-```bash
-uv init .
-uv add python-dotenv feedparser requests beautifulsoup4 pydantic pydantic-ai
-```
-
-### 3. `.env` ファイルを作成
+### 2. `.env` ファイルを作成
 
 プロジェクトルートに `.env` を作成し、以下のように記述：
 
@@ -30,13 +39,19 @@ GEMINI_API_KEY=your-api-key-here
 
 ---
 
+### 3. 依存関係の同期（`pyproject.toml` と `uv.lock` がある場合）
+
+```bash
+uv sync
+```
+
+---
+
 ## ▶️ 実行方法
 
 ```bash
-uv run python main.py
+uv run python news.py
 ```
-
-> 💡 `main.py` は、実際のスクリプト名に応じて変更してください。
 
 ---
 
