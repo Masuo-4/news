@@ -4,27 +4,25 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from dotenv import load_dotenv
-
 from pydantic import BaseModel
 from pydantic_ai import Agent
 from pydantic_ai.models.gemini import GeminiModel
 import asyncio
 
-# =======================
-# 設定・初期化
-# =======================
-load_dotenv()
+# ✅ RSS URL定義
 RSS_URL = "https://news.yahoo.co.jp/rss/topics/top-picks.xml"
 
+# ✅ Gemini設定（.env読み込み）
+load_dotenv()
+model = GeminiModel("gemini-2.5-flash")
+agent = Agent(model=model, output_type=BaseModel)
+
+# ✅ タイトル関連抽出（AI処理）
 class Summary(BaseModel):
     filtered_text: str
 
-model = GeminiModel("gemini-2.5-flash")
 agent = Agent(model=model, output_type=Summary)
 
-# =======================
-# Geminiでタイトル関連の内容だけを抽出
-# =======================
 async def extract_title_related_content(title: str, full_text: str) -> str:
     prompt = f"""
 以下はニュース記事の全文です。その中から「{title}」というタイトルに関係ない部分を削除してください。
@@ -36,18 +34,14 @@ async def extract_title_related_content(title: str, full_text: str) -> str:
     result = await agent.run(prompt)
     return result.output.filtered_text
 
-# =======================
-# Yahoo記事抽出
-# =======================
+# ✅ Yahoo記事HTMLから本文抽出
 def extract_yahoo_full_text(url: str) -> str:
     try:
         res = requests.get(url, timeout=5)
         soup = BeautifulSoup(res.text, "html.parser")
         article_body = soup.select_one("article")
-
         if not article_body:
             return ""
-
         paragraphs = []
         for tag in article_body.children:
             if tag.name == "p":
@@ -55,15 +49,12 @@ def extract_yahoo_full_text(url: str) -> str:
                 if text:
                     paragraphs.append(text)
             elif tag.name in {"div", "section"}:
-                break  # 関連記事などで終了
-
+                break
         return "\n".join(paragraphs)
     except Exception as e:
         return f"⚠️ Yahoo本文取得失敗: {e}"
 
-# =======================
-# 外部全文抽出（?page=2にも対応、著作権末尾10段落カット）
-# =======================
+# ✅ 外部記事（全文取得・複数ページ対応）
 def extract_external_full_text(url: str, max_pages: int = 5) -> str:
     try:
         all_paragraphs = []
@@ -91,7 +82,6 @@ def extract_external_full_text(url: str, max_pages: int = 5) -> str:
                 if text:
                     all_paragraphs.append(text)
 
-        # 著作権表記のカット
         cut_index = None
         for i in reversed(range(len(all_paragraphs))):
             last_line = all_paragraphs[i]
@@ -113,41 +103,46 @@ def extract_external_full_text(url: str, max_pages: int = 5) -> str:
     except Exception as e:
         return f"⚠️ 外部記事取得失敗: {e}"
 
-# =======================
-# メイン処理
-# =======================
-async def fetch_yahoo_full_articles(max_items=10):
+# ✅ メイン処理：Flask側から呼び出される非同期関数
+async def fetch_articles_for_web(max_items=10):
     feed = feedparser.parse(RSS_URL)
-
     if not feed.entries:
-        print("❌ RSSの取得に失敗しました。")
-        return
+        return []
 
-    for i, entry in enumerate(feed.entries[:max_items], 1):
-        print(f"{i}. 📰 {entry.title}")
-        print(f"   📎 Yahoo URL: {entry.link}")
-
+    results = []
+    for entry in feed.entries[:max_items]:
         try:
-            res = requests.get(entry.link, timeout=5)
+            title = entry.title
+            link = entry.link
+
+            res = requests.get(link, timeout=5)
             soup = BeautifulSoup(res.text, "html.parser")
             external_link = soup.find("a", string="記事全文を読む")
 
             if external_link and external_link.has_attr("href"):
                 full_url = external_link["href"]
-                print(f"   🔗 外部全文リンク: {full_url}")
-                external_text = extract_external_full_text(full_url)
-                related_text = await extract_title_related_content(entry.title, external_text)
-                print(f"🎯 タイトルに関係する内容（外部）:\n{related_text}\n")
+                full_text = extract_external_full_text(full_url)
+                related_text = await extract_title_related_content(title, full_text)
+                results.append({
+                    "title": title,
+                    "yahoo_link": link,
+                    "external_link": full_url,
+                    "content": related_text,
+                })
             else:
-                print("   ℹ️ 外部記事リンクがないため、Yahoo本文を抽出します")
-                yahoo_text = extract_yahoo_full_text(entry.link)
-                related_text = await extract_title_related_content(entry.title, yahoo_text)
-                print(f"🎯 タイトルに関係する内容（Yahoo）:\n{related_text}\n")
-
+                yahoo_text = extract_yahoo_full_text(link)
+                related_text = await extract_title_related_content(title, yahoo_text)
+                results.append({
+                    "title": title,
+                    "yahoo_link": link,
+                    "external_link": None,
+                    "content": related_text,
+                })
         except Exception as e:
-            print(f"   ⚠️ 全体処理中にエラー: {e}")
-
-        print("-" * 100)
-
-if __name__ == "__main__":
-    asyncio.run(fetch_yahoo_full_articles())
+            results.append({
+                "title": entry.title,
+                "yahoo_link": entry.link,
+                "external_link": None,
+                "content": f"[エラー発生] {e}"
+            })
+    return results
