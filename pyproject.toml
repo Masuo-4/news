@@ -9,7 +9,9 @@ dependencies = [
     "ddgs>=9.5.1",
     "duckduckgo-search>=8.1.1",
     "feedparser>=6.0.11",
+    "google-generativeai>=0.8.5",
     "lxml[html-clean]>=6.0.0",
     "newspaper3k>=0.2.8",
+    "pydantic-ai>=0.4.11",
     "requests>=2.32.4",
 ]
